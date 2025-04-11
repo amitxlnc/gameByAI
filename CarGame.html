@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Obstacle Game</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            color: white;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            width: 600px;
+            height: 600px;
+            background-color: #555;
+            border: 2px solid #fff;
+            overflow: hidden;
+        }
+        #road {
+            position: absolute;
+            width: 300px;
+            height: 100%;
+            left: 150px;
+            background-color: #222;
+        }
+        .lane {
+            position: absolute;
+            width: 100px;
+            height: 100%;
+            border-right: 2px dashed #fff;
+        }
+        #lane1 { left: 0; }
+        #lane2 { left: 100px; }
+        #lane3 { left: 200px; border-right: none; }
+        #car {
+            position: absolute;
+            width: 50px;
+            height: 80px;
+            background-color: red;
+            bottom: 20px;
+            left: 125px; /* Center in lane 2 */
+            border-radius: 5px;
+        }
+        .obstacle {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: yellow;
+            border-radius: 5px;
+        }
+        #finishLine {
+            position: absolute;
+            width: 300px;
+            height: 10px;
+            background-color: green;
+            top: 0;
+        }
+        #timer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+        }
+        #gameOver, #winScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Car Obstacle Game</h1>
+    <div id="gameContainer">
+        <div id="road">
+            <div id="lane1" class="lane"></div>
+            <div id="lane2" class="lane"></div>
+            <div id="lane3" class="lane"></div>
+        </div>
+        <div id="car"></div>
+        <div id="finishLine"></div>
+        <div id="timer">Time: 0.0s</div>
+        <div id="gameOver">
+            <h2>Game Over!</h2>
+            <p>You hit an obstacle.</p>
+            <button onclick="restartGame()">Restart</button>
+        </div>
+        <div id="winScreen">
+            <h2>You Won!</h2>
+            <p>Time: <span id="finalTime"></span></p>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        const car = document.getElementById('car');
+        const road = document.getElementById('road');
+        const finishLine = document.getElementById('finishLine');
+        const timerDisplay = document.getElementById('timer');
+        const gameOverScreen = document.getElementById('gameOver');
+        const winScreen = document.getElementById('winScreen');
+        const finalTimeDisplay = document.getElementById('finalTime');
+        let carLane = 2; // Start in middle lane (1, 2, 3)
+        let obstacles = [];
+        let gameActive = false;
+        let startTime, timerInterval;
+        const lanePositions = [75, 175, 275]; // Centers of lanes 1, 2, 3
+
+        function startGame() {
+            gameActive = true;
+            car.style.bottom = '20px';
+            carLane = 2;
+            car.style.left = lanePositions[carLane - 1] + 'px';
+            obstacles.forEach(obstacle => obstacle.remove());
+            obstacles = [];
+            spawnObstacles();
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 100);
+            gameOverScreen.style.display = 'none';
+            winScreen.style.display = 'none';
+            moveObstacles();
+        }
+
+        function updateTimer() {
+            const elapsed = (Date.now() - startTime) / 1000;
+            timerDisplay.textContent = `Time: ${elapsed.toFixed(1)}s`;
+        }
+
+        function spawnObstacles() {
+            const spacing = 150; // Vertical spacing between obstacles
+            for (let i = 0; i < 5; i++) {
+                const obstacle = document.createElement('div');
+                obstacle.className = 'obstacle';
+                // Ensure at least one lane is unblocked
+                const usedLanes = obstacles.map(o => lanePositions.indexOf(parseFloat(o.style.left)));
+                const availableLanes = [0, 1, 2].filter(lane => !usedLanes.includes(lane));
+                // If all lanes are used, pick randomly to start; otherwise, prioritize available lanes
+                const lane = availableLanes.length > 1 ? availableLanes[Math.floor(Math.random() * availableLanes.length)] : Math.floor(Math.random() * 3);
+                obstacle.style.left = lanePositions[lane] + 'px';
+                obstacle.style.top = -(i * spacing) - 100 + 'px';
+                road.appendChild(obstacle);
+                obstacles.push(obstacle);
+            }
+        }
+
+        function moveObstacles() {
+            if (!gameActive) return;
+            obstacles.forEach(obstacle => {
+                let top = parseFloat(obstacle.style.top) || 0;
+                top += 5;
+                if (top > 600) {
+                    obstacle.style.top = -100 + 'px';
+                    // Ensure at least one lane is unblocked
+                    const otherObstacles = obstacles.filter(o => o !== obstacle && Math.abs(parseFloat(o.style.top) - -100) < 100);
+                    const blockedLanes = otherObstacles.map(o => lanePositions.indexOf(parseFloat(o.style.left)));
+                    const availableLanes = [0, 1, 2].filter(lane => !blockedLanes.includes(lane));
+                    const lane = availableLanes.length > 0 ? availableLanes[Math.floor(Math.random() * availableLanes.length)] : Math.floor(Math.random() * 3);
+                    obstacle.style.left = lanePositions[lane] + 'px';
+                } else {
+                    obstacle.style.top = top + 'px';
+                }
+                checkCollision(obstacle);
+            });
+            checkFinishLine();
+            requestAnimationFrame(moveObstacles);
+        }
+
+        function checkCollision(obstacle) {
+            const carRect = car.getBoundingClientRect();
+            const obsRect = obstacle.getBoundingClientRect();
+            if (
+                carRect.left < obsRect.right &&
+                carRect.right > obsRect.left &&
+                carRect.top < obsRect.bottom &&
+                carRect.bottom > obsRect.top
+            ) {
+                endGame(false);
+            }
+        }
+
+        function checkFinishLine() {
+            const carBottom = parseFloat(car.style.bottom) || 20;
+            if (carBottom + 80 >= 590) {
+                endGame(true);
+            }
+        }
+
+        function endGame(won) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            if (won) {
+                const finalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                finalTimeDisplay.textContent = `${finalTime}s`;
+                winScreen.style.display = 'block';
+            } else {
+                gameOverScreen.style.display = 'block';
+            }
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!gameActive) return;
+            if (e.key === 'ArrowLeft' && carLane > 1) {
+                carLane--;
+            } else if (e.key === 'ArrowRight' && carLane < 3) {
+                carLane++;
+            } else if (e.key === 'ArrowUp') {
+                let bottom = parseFloat(car.style.bottom) || 20;
+                if (bottom + 80 < 600) {
+                    car.style.bottom = (bottom + 20) + 'px';
+                }
+            } else if (e.key === 'ArrowDown') {
+                let bottom = parseFloat(car.style.bottom) || 20;
+                if (bottom > 20) {
+                    car.style.bottom = (bottom - 20) + 'px';
+                }
+            }
+            car.style.left = lanePositions[carLane - 1] + 'px';
+        });
+
+        // Start the game on load
+        startGame();
+    </script>
+</body>
+</html>

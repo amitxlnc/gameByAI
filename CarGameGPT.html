@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Car Obstacle Game</title>
   <style>
-    /* Reset styles and hide global scroll */
+    /* Reset and basic styling */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -15,14 +15,14 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow: hidden; /* Prevent page scrolling */
+      overflow: hidden; /* Prevent scrolling */
     }
     body {
       font-family: sans-serif;
       background: #333;
       color: #fff;
     }
-    /* Fixed container covering the whole viewport */
+    /* Game container fills the viewport */
     #gameContainer {
       position: fixed;
       top: 0;
@@ -35,7 +35,7 @@
       justify-content: center;
       overflow: hidden;
     }
-    /* Header (title + timer) */
+    /* Header: title and timer */
     #header {
       text-align: center;
       margin-bottom: 5px;
@@ -47,7 +47,7 @@
     #timer {
       font-size: 20px;
     }
-    /* Fixed-size game area */
+    /* Game area (fixed size) */
     #gameArea {
       position: relative;
       width: 300px;
@@ -56,43 +56,56 @@
       border: 4px solid #fff;
       overflow: hidden;
     }
+    /* Lanes */
     .lane {
       position: absolute;
       width: 100px;
       height: 100%;
       border-left: 2px dashed #aaa;
+      z-index: 1;
     }
     #lane1 { left: 0; }
     #lane2 { left: 100px; }
     #lane3 { left: 200px; }
-    /* Car element – uses car.png and is fixed 10px from the bottom */
+    /* Car element */
     #car {
       position: absolute;
       width: 100px;
       height: 150px;
       background: url('car.png') center / cover no-repeat;
-      left: 110px; /* initially centered in the middle lane */
-      bottom: 10px;
+      left: 110px; /* initially in middle lane */
+      bottom: 10px; /* fixed vertical position */
       transition: left 0.1s ease-in-out;
+      z-index: 3;
     }
-    /* Obstacle styling – uses obstacle.png so that the image fills the entire obstacle */
+    /* Obstacle styling (using obstacle.png) */
     .obstacle {
       position: absolute;
       width: 60px;
       height: 30px;
       background: url('obstacle.png') center / cover no-repeat;
-      top: -30px; /* Spawn just above the game area */
+      top: -30px;
       border-radius: 8px;
+      z-index: 2;
+      transition: left 0.5s ease;
     }
-    /* Finish line styling */
+    /* Dynamic obstacles flash to indicate they may change lane */
+    .dynamic {
+      animation: flash 1s infinite;
+    }
+    @keyframes flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    /* Finish line */
     #finishLine {
       position: absolute;
       width: 100%;
       height: 20px;
-      /* Use a striped pattern */
       background: repeating-linear-gradient(45deg, #fff, #fff 5px, #000 5px, #000 10px);
+      z-index: 2;
     }
-    /* Banner: always displayed on top */
+    /* Banner always on top */
     #banner {
       position: absolute;
       top: 200px;
@@ -137,9 +150,8 @@
       <div class="lane" id="lane3"></div>
       <div id="car"></div>
       <div id="banner"></div>
-      <!-- The finish line will be created dynamically -->
+      <!-- Finish line will be injected dynamically -->
     </div>
-    <!-- Mobile Control Panel -->
     <div id="controls">
       <button id="btn-left">Left</button>
       <button id="btn-up">Up</button>
@@ -163,13 +175,13 @@
     
     // Lane positions (each lane is 100px wide)
     const lanes = [10, 110, 210];
-    let currentLane = 1; // Start in the middle lane
+    let currentLane = 1; // Start in middle lane
     
     // Game state for obstacles and finish line
     let obstacles = [];
     let finishLine = null;
     let finishLineSpawned = false;
-    const finishLineTime = 55;  // time (in seconds) when the finish line is spawned
+    const finishLineTime = 55;  // When finish line spawns (in seconds)
     
     let gameInterval;
     let spawnInterval;
@@ -179,17 +191,16 @@
     const baseObstacleSpeed = 6;
     const MIN_OBSTACLE_SPEED = 2;
     
-    // "Car speed" now is used only as a modifier for obstacle (and finish line) speed,
-    // while the car remains fixed vertically.
-    let carSpeed = 0; // speed modifier; higher values make obstacles (and finish line) move faster
+    // "Car speed" is used as a modifier for obstacles and finish line falling speed.
+    let carSpeed = 0;
     const MAX_CAR_SPEED = 8;
     const MIN_CAR_SPEED = 0;
     
     /**
      * processMovement(direction)
-     * - "left" and "right" change lanes (affecting horizontal position)
-     * - "up" increases the speed modifier (i.e. makes obstacles and finish line move faster)
-     * - "down" decreases the speed modifier
+     * - left/right: change lane (update car's horizontal position)
+     * - up: increase speed modifier (obstacles and finish line fall faster)
+     * - down: decrease speed modifier (obstacles fall slower)
      */
     function processMovement(direction) {
       switch(direction) {
@@ -206,12 +217,12 @@
           carSpeed = Math.max(carSpeed - 1, MIN_CAR_SPEED);
           break;
       }
-      // Update the car's horizontal position. (Vertical position is fixed.)
+      // Update horizontal position of the car (vertical remains fixed)
       car.style.left = lanes[currentLane] + "px";
     }
     
     /**
-     * Desktop keydown handler
+     * Keydown handler for desktop input.
      */
     function handleKeyDown(e) {
       switch(e.key) {
@@ -224,7 +235,7 @@
     
     document.addEventListener("keydown", handleKeyDown);
     
-    // Mobile button event listeners
+    // Mobile button event listeners.
     btnLeft.addEventListener("click", () => processMovement("left"));
     btnRight.addEventListener("click", () => processMovement("right"));
     btnUp.addEventListener("click", () => processMovement("up"));
@@ -232,51 +243,148 @@
     
     /**
      * Spawns a row of obstacles.
-     * Each row randomly blocks 1 or 2 lanes (ensuring at least one lane remains free).
+     * To increase the challenge, we occasionally force an obstacle into the car's lane.
+     * - If only one obstacle spawns:
+     *     With 50% chance, choose the car's current lane; otherwise, choose randomly from the other lanes.
+     * - If two obstacles spawn:
+     *     Force one obstacle into the car's lane and the other into one of the remaining lanes.
      */
     function createObstacleRow() {
       const allLanes = [0, 1, 2];
       const blockCount = Math.random() < 0.5 ? 1 : 2;
-      const shuffled = allLanes.sort(() => Math.random() - 0.5);
-      const blockedLanes = shuffled.slice(0, blockCount);
-      blockedLanes.forEach(lane => {
+      
+      let chosenLanes = [];
+      
+      if (blockCount === 1) {
+        if (Math.random() < 0.5) {
+          // Force the obstacle in the car's lane
+          chosenLanes = [currentLane];
+        } else {
+          // Choose randomly from lanes other than the car's lane
+          const otherLanes = allLanes.filter(lane => lane !== currentLane);
+          chosenLanes = [otherLanes[Math.floor(Math.random() * otherLanes.length)]];
+        }
+      } else {
+        // For two obstacles, ensure car's lane is blocked
+        chosenLanes.push(currentLane);
+        // Choose one lane from the lanes other than the car's lane
+        const otherLanes = allLanes.filter(lane => lane !== currentLane);
+        chosenLanes.push(otherLanes[Math.floor(Math.random() * otherLanes.length)]);
+      }
+      
+      chosenLanes.forEach(lane => {
         const obstacle = document.createElement("div");
         obstacle.classList.add("obstacle");
+        // Determine if the obstacle can be dynamic: only if one obstacle is spawned
+        let isDynamic = false;
+        if (blockCount === 1 && Math.random() < 0.5) {
+          isDynamic = true;
+          obstacle.classList.add("dynamic");
+        }
+        const obsObj = { element: obstacle, lane, dynamic: isDynamic, moved: false };
         obstacle.style.left = lanes[lane] + "px";
         obstacle.style.top = -30 + "px"; // Spawn just above the game area
         gameArea.appendChild(obstacle);
-        obstacles.push({ element: obstacle, lane });
+        obstacles.push(obsObj);
       });
     }
     
     /**
-     * Spawns the finish line.
-     * This function creates and appends the finish line element at the top of the game area.
+     * For dynamic obstacles, with a 10% chance (if not already moved) change lane once.
+     * The obstacle will only change lane to an adjacent lane.
+     */
+    function updateDynamicObstacle(obsObj) {
+      if (!obsObj.moved && Math.random() < 0.1) {
+        // Determine adjacent lanes: only lanes directly left or right
+        let possibleLanes = [];
+        if (obsObj.lane > 0) possibleLanes.push(obsObj.lane - 1);
+        if (obsObj.lane < 2) possibleLanes.push(obsObj.lane + 1);
+        // Choose one adjacent lane at random.
+        const newLane = possibleLanes[Math.floor(Math.random() * possibleLanes.length)];
+        obsObj.lane = newLane;
+        obsObj.element.style.left = lanes[newLane] + "px";
+        obsObj.moved = true;  // Only change lane once.
+        obsObj.element.classList.remove("dynamic"); // Stop flashing.
+      }
+    }
+    
+    /**
+     * Spawns the finish line at the top of the game area.
      */
     function spawnFinishLine() {
       finishLine = document.createElement("div");
       finishLine.id = "finishLine";
-      // Start the finish line at the top (set to 0px)
       finishLine.style.top = "0px";
       gameArea.appendChild(finishLine);
       finishLineSpawned = true;
     }
     
     /**
-     * Updates the positions of obstacles and finish line.
-     * Effective speed: baseObstacleSpeed + carSpeed (with a minimum)
+     * Spawns confetti particles when finish is reached.
+     */
+    function spawnParticles() {
+      const particleCount = 30;
+      for (let i = 0; i < particleCount; i++) {
+        const particle = document.createElement("div");
+        particle.classList.add("particle");
+        // Random starting position near finish line area.
+        const startX = Math.random() * 300;
+        const startY = 200 + (Math.random() * 20 - 10);
+        particle.style.left = startX + "px";
+        particle.style.top = startY + "px";
+        const dx = (Math.random() * 100 - 50) + "px";
+        const dy = (-Math.random() * 100 - 50) + "px";
+        particle.style.setProperty("--dx", dx);
+        particle.style.setProperty("--dy", dy);
+        gameArea.appendChild(particle);
+        setTimeout(() => {
+          particle.remove();
+        }, 1500);
+      }
+    }
+    
+    /**
+     * Injects CSS for the confetti particle animation.
+     */
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+      .particle {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: yellow;
+        opacity: 1;
+        z-index: 10000;
+        animation: confetti 1.5s ease-out forwards;
+      }
+      @keyframes confetti {
+        0% { transform: translate(0, 0); opacity: 1; }
+        100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(styleSheet);
+    
+    /**
+     * Updates obstacles and finish line positions.
      */
     function updateObstacles() {
       const effectiveSpeed = Math.max(baseObstacleSpeed + carSpeed, MIN_OBSTACLE_SPEED);
-      // Update obstacles
+      
+      // Update obstacles.
       for (let i = 0; i < obstacles.length; i++) {
-        const obs = obstacles[i];
-        let top = parseInt(obs.element.style.top);
+        const obsObj = obstacles[i];
+        let top = parseInt(obsObj.element.style.top);
         top += effectiveSpeed;
-        obs.element.style.top = top + "px";
-    
-        // Check collision between obstacle and car
-        const obsRect = obs.element.getBoundingClientRect();
+        obsObj.element.style.top = top + "px";
+        
+        // If dynamic and not yet moved, possibly change lane once.
+        if (obsObj.dynamic) {
+          updateDynamicObstacle(obsObj);
+        }
+        
+        // Check collision with car.
+        const obsRect = obsObj.element.getBoundingClientRect();
         const carRect = car.getBoundingClientRect();
         if (
           obsRect.left < carRect.right &&
@@ -287,23 +395,20 @@
           endGame(false);
           return;
         }
-    
-        // Remove obstacle if it goes off the bottom of the game area
+        
+        // Remove obstacle if it moves off the bottom.
         if (top > 600) {
-          obs.element.remove();
+          obsObj.element.remove();
           obstacles.splice(i, 1);
           i--;
         }
       }
-    
-      // If the finish line has been spawned, update its position
+      
+      // Update finish line if present.
       if (finishLine) {
         let finishTop = parseInt(finishLine.style.top);
         finishTop += effectiveSpeed;
         finishLine.style.top = finishTop + "px";
-    
-        // Check collision between finish line and car.
-        // If the finish line collides with the car, that means the car has reached the finish.
         const finishRect = finishLine.getBoundingClientRect();
         const carRect = car.getBoundingClientRect();
         if (
@@ -312,6 +417,7 @@
           finishRect.top < carRect.bottom &&
           finishRect.bottom > carRect.top
         ) {
+          spawnParticles();
           endGame(true);
           return;
         }
@@ -324,11 +430,9 @@
     function updateTimer() {
       timeElapsed += 0.1;
       timerDisplay.textContent = `Time: ${timeElapsed.toFixed(1)}s`;
-      // Once game time reaches finishLineTime, spawn finish line (if not already spawned)
       if (timeElapsed >= finishLineTime && !finishLineSpawned) {
         spawnFinishLine();
       }
-      // (Optionally, if time exceeds 60 seconds without finishing, you can call win too)
       if (timeElapsed >= 60 && !finishLine) {
         endGame(true);
       }

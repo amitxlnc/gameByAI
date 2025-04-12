@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Car Obstacle Game</title>
   <style>
+    /* Reset margins/padding and prevent scrolling */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -13,24 +14,43 @@
     html, body {
       width: 100%;
       height: 100%;
+      overflow: hidden; /* Hide scrollbars globally */
     }
     body {
       font-family: sans-serif;
       background: #333;
       color: #fff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
     }
-    /* Container for the entire game */
+    /* Fixed container that fills the viewport */
     #gameContainer {
-      text-align: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
     }
+    /* Header area (title + timer) */
+    #header {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #header h1 {
+      font-size: 24px;
+      margin-bottom: 5px;
+    }
+    #timer {
+      font-size: 20px;
+    }
+    /* Fixed-size game area */
     #gameArea {
       position: relative;
       width: 300px;
       height: 600px;
-      margin: 0 auto;
       background: #555;
       border: 4px solid #fff;
       overflow: hidden;
@@ -44,28 +64,26 @@
     #lane1 { left: 0; }
     #lane2 { left: 100px; }
     #lane3 { left: 200px; }
-
-    /* Car uses the car.png image and covers the entire car area */
+    /* Car: remains horizontally controllable; fixed vertical position */
     #car {
       position: absolute;
       width: 100px;
       height: 150px;
       background: url('car.png') center / cover no-repeat;
-      left: 110px; /* initially centered in the middle lane */
-      bottom: 10px; /* initial vertical position */
+      left: 110px; /* Initially centered in the middle lane */
+      bottom: 10px; /* Fixed vertical position */
       transition: left 0.1s ease-in-out;
     }
-
+    /* Obstacles */
     .obstacle {
       position: absolute;
       width: 60px;
       height: 30px;
       background: black;
-      top: -30px; /* spawn just above game area */
+      top: -30px; /* Spawn just above the game area */
       border-radius: 8px;
     }
-
-    /* Banner is always in front */
+    /* Banner always on top */
     #banner {
       position: absolute;
       top: 200px;
@@ -78,16 +96,32 @@
       color: yellow;
       z-index: 9999;
     }
-    #timer {
-      margin: 10px 0;
-      font-size: 20px;
+    /* Mobile control panel */
+    #controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    #controls button {
+      padding: 10px 15px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      background: #888;
+      color: #fff;
+    }
+    #controls button:active {
+      background: #aaa;
     }
   </style>
 </head>
 <body>
   <div id="gameContainer">
-    <h1>Car Obstacle Game</h1>
-    <div id="timer">Time: 0.0s</div>
+    <div id="header">
+      <h1>Car Obstacle Game</h1>
+      <div id="timer">Time: 0.0s</div>
+    </div>
     <div id="gameArea">
       <div class="lane" id="lane1"></div>
       <div class="lane" id="lane2"></div>
@@ -95,74 +129,96 @@
       <div id="car"></div>
       <div id="banner"></div>
     </div>
+    <!-- Mobile Control Panel -->
+    <div id="controls">
+      <button id="btn-left">Left</button>
+      <button id="btn-up">Up</button>
+      <button id="btn-down">Down</button>
+      <button id="btn-right">Right</button>
+    </div>
   </div>
   
   <script>
+    // Get elements
     const car = document.getElementById("car");
     const gameArea = document.getElementById("gameArea");
     const banner = document.getElementById("banner");
     const timerDisplay = document.getElementById("timer");
-
-    // Lane positions (left offsets in px)
-    const lanes = [10, 110, 210];
     
-    // Game state variables
-    let currentLane = 1; // lanes: 0 = left, 1 = middle, 2 = right
+    // Mobile controls
+    const btnLeft = document.getElementById("btn-left");
+    const btnRight = document.getElementById("btn-right");
+    const btnUp = document.getElementById("btn-up");
+    const btnDown = document.getElementById("btn-down");
+    
+    // Lane positions in pixels (each lane is 100px wide)
+    const lanes = [10, 110, 210];
+    let currentLane = 1; // starting lane index
+    
+    // Game state for obstacles
     let obstacles = [];
     let gameInterval;
     let spawnInterval;
     let timeElapsed = 0;
     
-    // Dimensions & movement constants
-    const CAR_HEIGHT = 150;       // Car height in pixels
-    const OBSTACLE_HEIGHT = 30;   // Obstacle height in pixels
-    const baseObstacleSpeed = 6;  // Base obstacle speed
-    const MIN_OBSTACLE_SPEED = 2; // Minimum obstacle speed
+    // Base obstacle speed in pixels per update
+    const baseObstacleSpeed = 6;
+    const MIN_OBSTACLE_SPEED = 2;
     
-    // For car vertical motion (the car moves upward when accelerating)
-    let carSpeed = 0;            // Car's vertical speed (pixels/update)
-    const MAX_CAR_SPEED = 8;     // Maximum upward car speed
-    const MIN_CAR_SPEED = 0;     // Minimum (stationary vertically)
-    let carVerticalPos = 10;     // Car's current vertical position from the bottom (in pixels)
-    
-    // Define a baseline car speed for obstacle speed scaling.
-    // When carSpeed is above this, obstacles speed up; below this, they slow down.
-    const baselineCarSpeed = 4;
+    // "Car speed" here is used purely as a modifier for the obstacles’ falling speed.
+    // The car remains fixed vertically.
+    let carSpeed = 0; // initial modifier (0 means obstacles move at base speed)
+    const MAX_CAR_SPEED = 8;
+    const MIN_CAR_SPEED = 0;
     
     /**
-     * Handle key presses:
-     * - Left/Right: lane switching.
-     * - Up: Increase car's vertical speed.
-     * - Down: Decrease car's vertical speed.
+     * processMovement(direction)
+     * - 'left' and 'right' change lane.
+     * - 'up' increases the speed modifier (thus obstacles fall faster).
+     * - 'down' decreases the speed modifier (obstacles fall slower).
      */
-    function handleKeyDown(e) {
-      switch(e.key) {
-        case "ArrowLeft":
-          if (currentLane > 0) {
-            currentLane--;
-          }
+    function processMovement(direction) {
+      switch(direction) {
+        case "left":
+          if (currentLane > 0) currentLane--;
           break;
-        case "ArrowRight":
-          if (currentLane < 2) {
-            currentLane++;
-          }
+        case "right":
+          if (currentLane < 2) currentLane++;
           break;
-        case "ArrowUp":
-          // Increase upward speed (accelerate)
+        case "up":
           carSpeed = Math.min(carSpeed + 1, MAX_CAR_SPEED);
           break;
-        case "ArrowDown":
-          // Decrease speed (brake)
+        case "down":
           carSpeed = Math.max(carSpeed - 1, MIN_CAR_SPEED);
           break;
       }
-      // Update horizontal lane position
+      // Update the car's horizontal position (vertical position remains fixed)
       car.style.left = lanes[currentLane] + "px";
     }
-
+    
+    /**
+     * Desktop keydown handler.
+     */
+    function handleKeyDown(e) {
+      switch(e.key) {
+        case "ArrowLeft": processMovement("left"); break;
+        case "ArrowRight": processMovement("right"); break;
+        case "ArrowUp": processMovement("up"); break;
+        case "ArrowDown": processMovement("down"); break;
+      }
+    }
+    
+    document.addEventListener("keydown", handleKeyDown);
+    
+    // Mobile button event listeners.
+    btnLeft.addEventListener("click", () => processMovement("left"));
+    btnRight.addEventListener("click", () => processMovement("right"));
+    btnUp.addEventListener("click", () => processMovement("up"));
+    btnDown.addEventListener("click", () => processMovement("down"));
+    
     /**
      * Spawns a row of obstacles.
-     * Each row blocks 1 or 2 lanes (randomly) ensuring at least one lane stays free.
+     * Each row blocks 1 or 2 lanes (randomly), ensuring at least one lane remains free.
      */
     function createObstacleRow() {
       const allLanes = [0, 1, 2];
@@ -173,43 +229,36 @@
         const obstacle = document.createElement("div");
         obstacle.classList.add("obstacle");
         obstacle.style.left = lanes[lane] + "px";
-        obstacle.style.top = -OBSTACLE_HEIGHT + "px"; // spawn just above the game area
+        obstacle.style.top = -30 + "px"; // spawn just above the game area
         gameArea.appendChild(obstacle);
         obstacles.push({ element: obstacle, lane });
       });
     }
-
+    
     /**
      * Updates obstacles' positions.
-     * Effective obstacle speed is adjusted based on carSpeed relative to a baseline.
+     * Effective obstacle speed = baseObstacleSpeed + carSpeed.
      */
     function updateObstacles() {
-      // Compute effective obstacle speed:
-      // Increase speed by 1 for every 2 units that carSpeed is above baseline,
-      // or decrease speed by 1/2 for every 2 units that carSpeed is below baseline.
-      let effectiveObstacleSpeed = baseObstacleSpeed + Math.floor((carSpeed - baselineCarSpeed) / 2);
-      effectiveObstacleSpeed = Math.max(effectiveObstacleSpeed, MIN_OBSTACLE_SPEED);
-      
+      const effectiveObstacleSpeed = Math.max(baseObstacleSpeed + carSpeed, MIN_OBSTACLE_SPEED);
       for (let i = 0; i < obstacles.length; i++) {
         const obs = obstacles[i];
         let top = parseInt(obs.element.style.top);
         top += effectiveObstacleSpeed;
         obs.element.style.top = top + "px";
-
-        // Use bounding rectangles for collision detection.
-        const obstacleRect = obs.element.getBoundingClientRect();
+    
+        // Collision detection using bounding rectangles.
+        const obsRect = obs.element.getBoundingClientRect();
         const carRect = car.getBoundingClientRect();
-        if (
-          obstacleRect.left < carRect.right &&
-          obstacleRect.right > carRect.left &&
-          obstacleRect.top < carRect.bottom &&
-          obstacleRect.bottom > carRect.top
-        ) {
+        if (obsRect.left < carRect.right &&
+            obsRect.right > carRect.left &&
+            obsRect.top < carRect.bottom &&
+            obsRect.bottom > carRect.top) {
           endGame(false);
           return;
         }
-
-        // Remove obstacle if it moves beyond the game area.
+    
+        // Remove obstacle if it goes off the bottom.
         if (top > 600) {
           obs.element.remove();
           obstacles.splice(i, 1);
@@ -217,25 +266,9 @@
         }
       }
     }
-
+    
     /**
-     * Updates the timer and moves the car upward based on its vertical speed.
-     */
-    function update() {
-      // Update car's vertical position based on its current speed.
-      carVerticalPos += carSpeed;
-      // Ensure the car does not move above the top boundary.
-      if (carVerticalPos > (600 - CAR_HEIGHT)) {
-        carVerticalPos = (600 - CAR_HEIGHT);
-      }
-      car.style.bottom = carVerticalPos + "px";
-
-      updateObstacles();
-      updateTimer();
-    }
-
-    /**
-     * Updates the timer; if 60 seconds pass, the player wins.
+     * Updates the timer.
      */
     function updateTimer() {
       timeElapsed += 0.1;
@@ -244,16 +277,24 @@
         endGame(true);
       }
     }
-
+    
     /**
-     * Starts the game.
+     * The update loop.
+     * Note: The car's vertical position remains fixed.
+     */
+    function update() {
+      updateObstacles();
+      updateTimer();
+    }
+    
+    /**
+     * Starts the game loop.
      */
     function startGame() {
-      document.addEventListener("keydown", handleKeyDown);
       spawnInterval = setInterval(createObstacleRow, 4000);
       gameInterval = setInterval(update, 100);
     }
-
+    
     /**
      * Ends the game.
      */
@@ -264,7 +305,8 @@
       banner.style.display = "block";
       banner.textContent = won ? "You Win! 🎉" : "Game Over! 💥";
     }
-
+    
     startGame();
   </script>
 </body>
+</html>
